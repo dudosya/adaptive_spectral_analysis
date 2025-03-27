@@ -1,10 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import find_peaks # <-- Import find_peaks
+from scipy.signal import find_peaks
+from signal_generation import *
 
 def plot_signal(signal, sampling_rate, title="Signal"):
     signal = np.asarray(signal)
     time = np.linspace(0, len(signal) / sampling_rate, len(signal), endpoint=False)
+    print(f"The signal has {len(time)} samples")
 
     plt.figure()
     plt.plot(time, signal)
@@ -13,6 +15,82 @@ def plot_signal(signal, sampling_rate, title="Signal"):
     plt.ylabel("Amplitude")
     plt.grid(True)
     plt.show()
+
+
+def plot_signal_components(time_array, component_list):
+    """
+    Generates and plots each signal component specified in component_list
+    individually in separate plot windows.
+
+    Args:
+        time_array (np.ndarray): The time vector.
+        component_list (list): A list where each element is a dictionary
+                               describing a signal component (same format
+                               as for sum_signal_components).
+    """
+    print(f"Plotting {len(component_list)} signal components individually...")
+    signal_length = len(time_array)
+
+    for i, comp in enumerate(component_list):
+        comp_type = comp.get('type', 'sine').lower()
+        component_signal = np.zeros_like(time_array) # Initialize for this component
+        title_suffix = "" # To store specific parameters for the title
+
+        try:
+            if comp_type == 'sine':
+                freq = comp.get('freq', 1)
+                amp = comp.get('amp', 1.0)
+                phase = comp.get('phase', 0)
+                component_signal = sine_wave_generator(time_array, freq, amp, phase)
+                title_suffix = f"(Freq: {freq} Hz, Amp: {amp})"
+            elif comp_type == 'am':
+                freq = comp.get('freq', 1)
+                envelope = comp.get('envelope', 1.0) # Using 1.0 if None for plotting
+                phase = comp.get('phase', 0)
+                # Re-generate envelope if needed, handle different types for title
+                if callable(envelope):
+                     envelope_desc = "Function"
+                elif isinstance(envelope, (np.ndarray, list)):
+                     envelope_desc = f"Array[{len(envelope)}]"
+                else:
+                     envelope_desc = f"Scalar({envelope})"
+
+                component_signal = am_sine_generator(time_array, freq, envelope, phase)
+                title_suffix = f"(Carrier Freq: {freq} Hz, Envelope: {envelope_desc})"
+            elif comp_type == 'chirp':
+                start_freq = comp.get('start_freq', 1)
+                end_freq = comp.get('end_freq', 1)
+                amp = comp.get('amp', 1.0)
+                phase = comp.get('phase', 0)
+                component_signal = linear_chirp_generator(time_array, start_freq, end_freq, amp, phase)
+                title_suffix = f"(Freq: {start_freq} Hz to {end_freq} Hz, Amp: {amp})"
+            elif comp_type == 'noise':
+                mean = comp.get('mean', 0.0)
+                std_dev = comp.get('std_dev', 0.1)
+                component_signal = gaussian_noise_generator(signal_length, mean, std_dev)
+                title_suffix = f"(Mean: {mean}, Std Dev: {std_dev})"
+            else:
+                print(f"Skipping unknown component type '{comp_type}' for plotting.")
+                continue # Skip to next component
+
+            # --- Plotting the current component ---
+            plt.figure(figsize=(10, 4)) # Create a new figure for each component
+            plt.plot(time_array, component_signal)
+            plt.title(f"Signal Component {i+1}: {comp_type.upper()} {title_suffix}")
+            plt.xlabel("Time (s)")
+            plt.ylabel("Amplitude")
+            plt.grid(True)
+            plt.tight_layout()
+            print(f"Showing plot for component {i+1} ({comp_type}). Close plot window to continue...")
+            plt.show() # Display the plot and wait until it's closed
+
+        except Exception as e:
+            print(f"Error plotting component {i+1} ({comp_type}): {e}")
+            # Optionally close any partially created figure if error occurs mid-plot
+            plt.close() # Close potentially broken figure window
+
+    print("Finished plotting all components.")
+
 
 
 
@@ -77,82 +155,123 @@ def plot_spectrum(signal, fft_output, sampling_rate = 1000, threshold_ratio=0.1,
     plt.show()
 
 
-def plot_LMS_results(error_signal, frequencies, psd, signal, sampling_rate, y_output, threshold_ratio=0.1, prominence=None):
-    plt.figure(figsize=(12, 8))
+def plot_filter_results(error_signal, frequencies, psd, signal, sampling_rate, y_output,
+                         filter_type="Filter", # Added argument, default "Filter"
+                         threshold_ratio=0.1, prominence=None):
+    """
+    Plots the results of an adaptive filter, preserving the original 4-subplot structure.
+
+    Args:
+        error_signal (np.ndarray): The error signal e(n).
+        frequencies (np.ndarray): Frequencies corresponding to the PSD array.
+        psd (np.ndarray): Power Spectral Density estimate from filter weights.
+        signal (np.ndarray): The original input signal d(n) (or desired signal).
+        sampling_rate (float): The sampling rate of the signals.
+        y_output (np.ndarray): The filter's output signal y(n).
+        filter_type (str): Name of the filter used (e.g., "LMS", "NLMS", "RLS")
+                           for plot titles and labels.
+        threshold_ratio (float): Ratio of the maximum PSD height used as a minimum
+                                 threshold for peak detection (0 to 1).
+        prominence (float, optional): Required prominence of peaks for find_peaks.
+                                      See scipy.signal.find_peaks documentation.
+    """
+    plt.figure(figsize=(12, 8)) # Keep original figure size
 
     # Plot Error Signal
     plt.subplot(2, 2, 1)
+    # Assuming error_signal length corresponds to iterations
     plt.plot(error_signal)
-    plt.xlabel("Iteration")
+    plt.xlabel("Iteration") # Keep original label
     plt.ylabel("Error")
     plt.grid(True)
-    plt.title("LMS Error Signal")
+    plt.title(f"{filter_type} Error Signal") # Use filter_type
 
-
-    # --- Extract Positive Frequencies for LMS PSD ---
-    positive_freq_indices_lms = np.where(frequencies >= 0)[0]
-    if len(positive_freq_indices_lms) == 0:
-        print("Warning: No positive frequencies found for LMS spectrum analysis.")
-        # Still attempt to plot other subplots
-        positive_frequencies_lms = np.array([])
-        positive_psd_lms = np.array([])
+    # --- Extract Positive Frequencies for Filter PSD ---
+    # Keep original variable names but replace "lms" with "filter" for clarity
+    positive_freq_indices_filter = np.where(frequencies >= 0)[0]
+    if len(positive_freq_indices_filter) == 0:
+        print(f"Warning: No positive frequencies found for {filter_type} spectrum analysis.")
+        positive_frequencies_filter = np.array([])
+        positive_psd_filter = np.array([])
     else:
-        positive_frequencies_lms = frequencies[positive_freq_indices_lms]
-        positive_psd_lms = psd[positive_freq_indices_lms]
-
-    # --- Peak Finding (LMS) ---
-    print("\n--- LMS Peak Frequencies ---")
-    peak_frequencies_lms = [] # Initialize in case of issues
-    peak_indices_lms = []
-    if len(positive_psd_lms) > 0 and np.max(positive_psd_lms) > 0:
-        min_height_lms = np.max(positive_psd_lms) * threshold_ratio
-        peak_indices_lms, _ = find_peaks(positive_psd_lms, height=min_height_lms, prominence=prominence)
-        peak_frequencies_lms = positive_frequencies_lms[peak_indices_lms]
-
-        if len(peak_frequencies_lms) > 0:
-            peak_frequencies_lms.sort()
-            print(f"Found {len(peak_frequencies_lms)} peaks at frequencies (Hz):")
-            print([f"{freq:.2f}" for freq in peak_frequencies_lms])
-            # Optionally print heights:
-            # print(f"Peak PSD values (linear): {[f'{positive_psd_lms[i]:.4f}' for i in peak_indices_lms]}")
+        positive_frequencies_filter = frequencies[positive_freq_indices_filter]
+         # Handle potential mismatch if psd passed in is already positive-only
+        if len(psd) == len(frequencies):
+             positive_psd_filter = psd[positive_freq_indices_filter]
+        elif len(psd) == len(positive_freq_indices_filter):
+             positive_psd_filter = psd # Assume psd was already processed
         else:
-            print(f"No significant LMS peaks found above threshold ({threshold_ratio*100:.1f}% of max) or with specified prominence.")
-            print(f"Max LMS PSD value: {np.max(positive_psd_lms):.4f}")
+             print(f"Warning: Mismatch between frequencies ({len(frequencies)}) and psd ({len(psd)}) lengths for {filter_type}.")
+             positive_psd_filter = np.array([]) # Cannot reliably extract
 
-    elif len(positive_psd_lms) > 0:
-         print("LMS PSD is all zero or negative, cannot find peaks.")
+    # --- Peak Finding (using filter variables) ---
+    print(f"\n--- {filter_type} Peak Frequencies ---") # Use filter_type
+    peak_frequencies_filter = [] # Initialize
+    peak_indices_filter = []
+    # Check on the potentially extracted positive PSD
+    valid_psd_for_peaks = positive_psd_filter[np.isfinite(positive_psd_filter)]
+
+    if len(valid_psd_for_peaks) > 0 and np.max(valid_psd_for_peaks) > 1e-12:
+        min_height_filter = np.max(valid_psd_for_peaks) * threshold_ratio
+        try:
+             peak_indices_filter, _ = find_peaks(positive_psd_filter, height=min_height_filter, prominence=prominence)
+             # Ensure indices are valid for frequency array
+             valid_peak_indices = [idx for idx in peak_indices_filter if idx < len(positive_frequencies_filter) and np.isfinite(positive_psd_filter[idx])]
+             peak_frequencies_filter = positive_frequencies_filter[valid_peak_indices]
+             peak_indices_filter = valid_peak_indices # Update to only valid ones
+
+             if len(peak_frequencies_filter) > 0:
+                peak_frequencies_filter.sort()
+                print(f"Found {len(peak_frequencies_filter)} peaks at frequencies (Hz):")
+                print([f"{freq:.2f}" for freq in peak_frequencies_filter])
+             else:
+                print(f"No significant {filter_type} peaks found above threshold ({threshold_ratio*100:.1f}% of max) or with specified prominence.")
+                print(f"Max {filter_type} PSD value (finite): {np.max(valid_psd_for_peaks):.4g}")
+        except Exception as e: # Catch potential errors during find_peaks
+             print(f"Error during peak finding for {filter_type}: {e}")
+
+    elif len(positive_psd_filter) > 0:
+         print(f"{filter_type} PSD is likely all zero, negative, or non-finite. Cannot find peaks.")
     else:
-         print("No positive LMS PSD data to analyze.")
-    # --- End Peak Finding (LMS) ---
+         print(f"No valid positive {filter_type} PSD data to analyze.")
+    # --- End Peak Finding ---
 
 
-    # Plot Adaptive PSD (Positive Frequencies)
+    # Plot Adaptive PSD (Positive Frequencies) - Linear Scale as original
     plt.subplot(2, 2, 2)
-    plt.plot(frequencies, psd) 
+    if len(positive_frequencies_filter) > 0 and len(positive_psd_filter) == len(positive_frequencies_filter):
+        plt.plot(positive_frequencies_filter, positive_psd_filter, label=f'{filter_type} PSD') # Use filter_type
+        # Add markers for detected peaks
+        if len(peak_frequencies_filter) > 0:
+             # Get PSD values at the valid peak indices
+             peak_psd_values = positive_psd_filter[peak_indices_filter]
+             plt.plot(peak_frequencies_filter, peak_psd_values, "x", color='red', markersize=8, label='Detected Peaks')
+        plt.legend()
+    else:
+         plt.plot([], []) # Plot empty if no data
+         plt.legend([f'{filter_type} PSD (No data)'])
+
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Power Spectral Density")
-    plt.title("Adaptive Spectrum (LMS)")
+    plt.title(f"Adaptive Spectrum ({filter_type})") # Use filter_type
     plt.grid(True)
     plt.xlim(0, sampling_rate / 2)  # Limit x-axis to Nyquist frequency
 
-    # Add markers for detected LMS peaks
-    if len(peak_frequencies_lms) > 0:
-        plt.plot(peak_frequencies_lms, positive_psd_lms[peak_indices_lms], "x", color='red', markersize=8, label='Detected Peaks')
-        plt.legend()
 
     # Plot the filter's output (predicted part of the signal)
     plt.subplot(2, 2, 3)
+    # Assuming signal and y_output have same length corresponding to samples
     plt.plot(signal, label="Original signal")
-    plt.plot(y_output, label="LMS filter output/prediction")
-    plt.title("LMS Predicted signal part")
-    plt.xlabel("Time (samples)")
+    plt.plot(y_output, label=f"{filter_type} filter output/prediction") # Use filter_type
+    plt.title(f"{filter_type} Predicted signal part") # Use filter_type
+    plt.xlabel("Time (samples)") # Keep original label
     plt.ylabel("Amplitude")
     plt.grid(True)
     plt.legend()
 
     # --- Compare with FFT based spectrum (Log Scale) ---
+    # Keep this subplot as it was
     plt.subplot(2, 2, 4)
-    # Calculate FFT spectrum here for comparison plot
     fft_output_comp = np.fft.fft(signal)
     frequencies_fft_comp = np.fft.fftfreq(len(signal), 1/sampling_rate)
     psd_fft_comp = np.abs(fft_output_comp)**2
@@ -164,27 +283,68 @@ def plot_LMS_results(error_signal, frequencies, psd, signal, sampling_rate, y_ou
         positive_psd_fft_comp = psd_fft_comp[positive_freq_indices_fft_comp]
 
         # Plot FFT PSD only if valid data exists
-        valid_fft_psd = positive_psd_fft_comp > 0
+        valid_fft_psd = positive_psd_fft_comp > 1e-15 # Use small threshold for log plot
         if np.any(valid_fft_psd):
              plt.semilogy(positive_frequencies_fft_comp[valid_fft_psd],
                           positive_psd_fft_comp[valid_fft_psd],
                           label='FFT PSD', alpha=0.7)
 
-    # Plot LMS PSD only if valid data exists
-    if len(positive_psd_lms) > 0:
-        valid_lms_psd = positive_psd_lms > 0
-        if np.any(valid_lms_psd):
-            plt.semilogy(positive_frequencies_lms[valid_lms_psd],
-                         positive_psd_lms[valid_lms_psd],
-                         label='LMS PSD', alpha=0.9)
+    # Plot Filter PSD (from positive_psd_filter) only if valid data exists
+    if len(positive_psd_filter) > 0:
+        valid_filter_psd = positive_psd_filter > 1e-15 # Use small threshold for log plot
+        if np.any(valid_filter_psd):
+            # Make sure indices align if filtering happened
+            freqs_to_plot = positive_frequencies_filter[valid_filter_psd]
+            psd_to_plot = positive_psd_filter[valid_filter_psd]
+            if len(freqs_to_plot) == len(psd_to_plot):
+                 plt.semilogy(freqs_to_plot, psd_to_plot,
+                             label=f'{filter_type} PSD', alpha=0.9) # Use filter_type
+            else:
+                 print(f"Warning: Mismatch plotting {filter_type} PSD on log scale.")
+
 
     plt.xlabel("Frequency (Hz)")
-    plt.ylabel("Power Spectral Density") # Corrected label
-    plt.title("Comparison FFT vs LMS PSD (Log Scale)")
+    plt.ylabel("Power Spectral Density (Log Scale)") # Label clarifies log scale
+    plt.title(f"Comparison FFT vs {filter_type} PSD (Log Scale)") # Use filter_type
     plt.xlim(0, sampling_rate / 2)
-    plt.ylim(bottom=max(np.finfo(float).eps, np.min(positive_psd_lms[valid_lms_psd]) / 10) if np.any(valid_lms_psd) else 1e-6) # Adjust y-lim bottom
-    plt.grid(True)
+    # Simplified bottom limit for robustness
+    current_ylim = plt.ylim()
+    plt.ylim(bottom=max(np.finfo(float).eps, current_ylim[0]/10 if current_ylim[0] > 0 else 1e-9)) # Avoid zero, adjust based on data
+    plt.grid(True, which='both') # Add grid for log scale
     plt.legend()
 
     plt.tight_layout()
     plt.show()
+
+
+
+# --- Example Usage ---
+if __name__ == "__main__":
+    # signal config
+    start_time = 0
+    end_time = 0.1 # Make time shorter for clearer individual plots
+    sampling_rate = 2000 # Increase SR for higher freqs
+
+    sine_dict = {"type":"sine", "freq": 100, "amp": 0.5, "phase": 0}
+    # AM with a simple envelope function for demonstration
+    def simple_env(t): return 0.8 + 0.2 * np.sin(2 * np.pi * 20 * t)
+    am_dict = {"type":"am", "freq": 300, "envelope": simple_env, "phase": np.pi/2}
+    chirp_dict = {'type': 'chirp', 'start_freq': 200, 'end_freq': 400, 'amp': 0.6}
+    noise_dict = {'type': 'noise', 'mean': 0.0, 'std_dev': 0.05}
+
+    # List of components to use
+    signals_list = [sine_dict, chirp_dict, am_dict, noise_dict]
+    # signals_list = [sine_dict, noise_dict] # Test with fewer components
+
+    # running funcs
+    time_array = generate_time_vector(start_time, end_time, sampling_rate)
+
+    # Generate the combined signal (optional, not needed for plotting components)
+    # signal = sum_signal_components(time_array, signals_list )
+    # plt.figure()
+    # plt.plot(time_array, signal)
+    # plt.title("Combined Signal")
+    # plt.show()
+
+    # --- Plot individual components ---
+    plot_signal_components(time_array, signals_list)

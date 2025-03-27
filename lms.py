@@ -105,26 +105,6 @@ def nlms_filter(signal, filter_order, norm_step_size=0.1, delay=1, reg_factor=1e
     return weights, errors, y_out
 
 
-def adaptive_spectrum(weights, sampling_rate):
-    """
-    Calculates the power spectral density (PSD) from the filter weights.
-
-    Args:
-        weights: The converged filter weights.
-        sampling_rate: The sampling rate of the original signal.
-
-    Returns:
-        frequencies: The frequencies corresponding to the PSD values.
-        psd: The power spectral density.
-    """
-    W = np.fft.fft(weights)
-    psd = np.abs(W)**2
-    frequencies = np.fft.fftfreq(len(weights), 1/sampling_rate)
-    # Return only positive frequencies for easier plotting
-    pos_freq_indices = frequencies >= 0
-    return frequencies[pos_freq_indices], psd[pos_freq_indices]
-
-
 
 
 if __name__ == "__main__":
