@@ -128,7 +128,7 @@ def plot_LMS_results(error_signal, frequencies, psd, signal, sampling_rate, y_ou
 
     # Plot Adaptive PSD (Positive Frequencies)
     plt.subplot(2, 2, 2)
-    plt.plot(frequencies[:len(frequencies)//2], psd[:len(psd)//2])  # Only positive frequencies
+    plt.plot(frequencies, psd) 
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Power Spectral Density")
     plt.title("Adaptive Spectrum (LMS)")
